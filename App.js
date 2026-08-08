@@ -1,3 +1,32 @@
+// ======================================================
+// APP.JS - Adobe Cert Registry
+//
+// Primary application component for the Adobe Cert Registry dashboard.
+//
+// CONFIG: search for API_BASE_URL and API_KEY in the API section below.
+//
+// Dependencies (package.json): react, @mui/material, @mui/icons-material,
+// @mui/x-data-grid, @emotion/react, @emotion/styled
+//
+// Fonts: Plus Jakarta Sans + JetBrains Mono (loaded via public/index.html)
+//
+// FUNCTIONALITY:
+// - Fetch certificates from API Gateway (GET /AggregatedData)
+// - Toggle Slack/PagerDuty alerting (PUT /Preferences, optimistic updates, 409 rollback)
+// - Search bar (domain, app, team, manager, account ID, provider)
+// - Multi-select filters: Type, Environment, Provider, Team, Manager, Status
+// - Searchable filter dropdowns with scroll + select all/clear
+// - Advanced per-column filter rules (contains, equals, is empty, etc.)
+// - Active filter chips + clear all
+// - Shareable views via URL query params (filters persist on reload)
+// - KPI stat cards (Total, Expiring <=30d, Expired) as quick filters
+// - Certificate DataGrid with sticky first column, CSV export
+// - Column show/hide menu
+// - Certificate detail drawer (Overview, Escalation, Alerts, Details, Runbook tabs)
+// - Header notifications bell (expired/expiring certs, open detail or filter table)
+// - User menu (refresh data, reset filters)
+// - Snackbar notifications, error boundary, fetch error banner
+// ======================================================
 import React, { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Alert, Avatar, Badge, Box, Button, Checkbox, Chip, CircularProgress,
@@ -1324,11 +1353,11 @@ const downloadRowsAsCsv = ({ rows, columns, visibilityModel, filenamePrefix = 'c
 // minimum restrict this key's usage plan tightly in API Gateway (IP
 // allowlist / low rate limit) so a leaked key can't be abused broadly.
 // ======================================================
-const API_BASE_URL = 'https://eexsud7.execute-api.us-east-1.amazonaws.com';
+const API_BASE_URL = 'https://ee6pnxsud7.execute-api.us-east-1.amazonaws.com';
 const AGGREGATED_DATA_ENDPOINT = `${API_BASE_URL}/AggregatedData`;
 const PREFERENCES_ENDPOINT = `${API_BASE_URL}/Preferences`;
 
-const API_KEY = 'NDkjfbnhfjfdsfdfeefe';
+const API_KEY = 'NDkjfbnhfjdmbfvbjbufdjfkncmnidhpfijdfnnremdbjfknbdnsksdfdsfdfeefe';
 
 // `accountId` arriving as a JSON *number* rather than a string is lossy past
 // Number.MAX_SAFE_INTEGER (2^53-1): JSON.parse() has already rounded it by

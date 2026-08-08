@@ -1,0 +1,19 @@
+{
+  "statusCode": 200,
+  "body": {
+    "totalCertificatesProcessed": 6,
+    "totalAggregatedRecords": 6,
+    "recordsSuccessfullyWritten": 6,
+    "recordsFailedToWrite": 0,
+    "unmappedAccountsCount": 1,
+    "unmappedAccountsList": [
+      "509319545547"
+    ],
+    "duplicateKeysDetected": 0,
+    "skippedInvalidCerts": 0
+  }
+}
+
+We are receiving output like above. We should send a notification, when ever we received the count for this "unmappedAccountsCount": 1,
+Even though received the status code 200 
+Above mean, that, in the service registry, we don't have an account with this account number

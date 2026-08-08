@@ -1,0 +1,188 @@
+Let me check the exact current state of the code to make sure every alarm I list maps to a real, currently-present log event — not something we added and then reverted.Here's the complete alarm inventory, built against the **exact log events your current code actually emits** (I just re-checked the file to make sure every filter pattern below is real, not something from a reverted change).
+
+## The full picture: what covers what
+
+| # | Signal | Source | Tier | Catches |
+|---|---|---|---|---|
+| 1 | `Errors` | Native `AWS/Lambda` | **Must-have** | Any `DiscoveryFailedError` raise — accounts, regions, or writes failed |
+| 2 | `Throttles` | Native `AWS/Lambda` | **Must-have** | Invocation rejected by concurrency limits |
+| 3 | `Duration` (near-timeout) | Native `AWS/Lambda` | **Must-have** | Run approaching the Lambda timeout |
+| 4 | `DescribeFailures` | Log filter | **Must-have** | Some certs couldn't be described — doesn't raise, so `Errors` won't catch it |
+| 5 | `DuplicateItemsDroppedBeforeWrite` | Log filter | **Must-have** | ACM pagination drift caused a dedup — doesn't raise |
+| 6 | `certificatesFound` anomaly | Log filter + Anomaly Detection | **Recommended** | Silent under-counting (permissions drift, trimmed account list) — nothing raises, nothing describes-fails |
+| 7 | `DiscoveryFailed` | Log filter | **Recommended** | Redundant with #1, but carries the *why* (which accounts/regions/counts) in the alert itself |
+| 8 | `PutItemFailed` (granular) | Log filter | Optional | Per-item write failures — for root-causing after #1 fires, not a standalone page |
+| 9 | `RegionFailed` (granular) | Log filter | Optional | Trend: which region fails most |
+| 10 | `AccountFailed` (granular) | Log filter | Optional | Trend: which account fails most (IAM drift detection) |
+| 11 | `NoTargetAccountsConfigured` | Log filter | Optional | Distinguishes "config problem" from "AWS access problem" at a glance |
+| 12 | DLQ depth | Native `AWS/SQS` | Situational | Only if EventBridge retries + DLQ are configured — catches "even the retries failed" |
+
+Items 1–5 are the ones that actually matter for "notify me of any issue" — everything below that is refinement.
+
+---
+
+## Must-have (5 alarms)
+
+**1. Errors**
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name cert-discovery-lambda-errors \
+  --namespace AWS/Lambda --metric-name Errors \
+  --dimensions Name=FunctionName,Value=<YOUR_FUNCTION_NAME> \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:<ACCOUNT_ID>:cert-discovery-critical
+```
+
+**2. Throttles**
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name cert-discovery-lambda-throttles \
+  --namespace AWS/Lambda --metric-name Throttles \
+  --dimensions Name=FunctionName,Value=<YOUR_FUNCTION_NAME> \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:<ACCOUNT_ID>:cert-discovery-critical
+```
+
+**3. Duration (near-timeout)** — replace `<80_PERCENT_OF_TIMEOUT_MS>` with 80% of your configured Lambda timeout, in milliseconds (e.g. timeout=300s → threshold=240000):
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name cert-discovery-lambda-near-timeout \
+  --namespace AWS/Lambda --metric-name Duration \
+  --dimensions Name=FunctionName,Value=<YOUR_FUNCTION_NAME> \
+  --statistic Maximum --period 300 --evaluation-periods 1 \
+  --threshold <80_PERCENT_OF_TIMEOUT_MS> \
+  --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:<ACCOUNT_ID>:cert-discovery-warnings
+```
+
+**4. DescribeFailures** (filter + alarm):
+```bash
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/<YOUR_FUNCTION_NAME> \
+  --filter-name CertDiscoveryDescribeFailures \
+  --filter-pattern '{ $.event = "DescribeFailures" }' \
+  --metric-transformations \
+      metricName=CertDiscoveryDescribeFailureEvents,metricNamespace=CertDiscovery,metricValue='$.failedCount',defaultValue=0
+
+aws cloudwatch put-metric-alarm \
+  --alarm-name cert-discovery-describe-failures \
+  --namespace CertDiscovery --metric-name CertDiscoveryDescribeFailureEvents \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:<ACCOUNT_ID>:cert-discovery-warnings
+```
+
+**5. DuplicateItemsDroppedBeforeWrite** (filter + alarm):
+```bash
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/<YOUR_FUNCTION_NAME> \
+  --filter-name CertDiscoveryDuplicatesDropped \
+  --filter-pattern '{ $.event = "DuplicateItemsDroppedBeforeWrite" }' \
+  --metric-transformations \
+      metricName=CertDiscoveryDuplicatesDropped,metricNamespace=CertDiscovery,metricValue='$.duplicatesDropped',defaultValue=0
+
+aws cloudwatch put-metric-alarm \
+  --alarm-name cert-discovery-duplicates-dropped \
+  --namespace CertDiscovery --metric-name CertDiscoveryDuplicatesDropped \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:<ACCOUNT_ID>:cert-discovery-warnings
+```
+
+---
+
+## Recommended (2 more)
+
+**6. Certificate count anomaly** — needs `DiscoveryCompleted`'s `metrics.certificatesFound` field, and a few weeks of history before it's useful:
+```bash
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/<YOUR_FUNCTION_NAME> \
+  --filter-name CertDiscoveryCertificatesFound \
+  --filter-pattern '{ $.event = "DiscoveryCompleted" }' \
+  --metric-transformations \
+      metricName=CertDiscoveryCertificatesFound,metricNamespace=CertDiscovery,metricValue='$.metrics.certificatesFound',defaultValue=0
+
+aws cloudwatch put-anomaly-detector \
+  --namespace CertDiscovery --metric-name CertDiscoveryCertificatesFound --stat Average
+
+aws cloudwatch put-metric-alarm \
+  --alarm-name cert-discovery-certificate-count-anomaly \
+  --namespace CertDiscovery --metric-name CertDiscoveryCertificatesFound \
+  --statistic Average --period 86400 --evaluation-periods 1 \
+  --comparison-operator LessThanLowerOrGreaterThanUpperThreshold \
+  --threshold-metric-id ad1 \
+  --metrics '[{"Id":"m1","MetricStat":{"Metric":{"Namespace":"CertDiscovery","MetricName":"CertDiscoveryCertificatesFound"},"Period":86400,"Stat":"Average"}},{"Id":"ad1","Expression":"ANOMALY_DETECTION_BAND(m1, 2)"}]' \
+  --alarm-actions arn:aws:sns:us-east-1:<ACCOUNT_ID>:cert-discovery-warnings
+```
+
+**7. `DiscoveryFailed` (rich failure detail)** — redundant with alarm #1 as a *trigger*, but the filter is worth having regardless so you can build a CloudWatch Logs Insights saved query or dashboard widget around it:
+```bash
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/<YOUR_FUNCTION_NAME> \
+  --filter-name CertDiscoveryFailedRuns \
+  --filter-pattern '{ $.event = "DiscoveryFailed" }' \
+  --metric-transformations \
+      metricName=CertDiscoveryFailedRuns,metricNamespace=CertDiscovery,metricValue=1,defaultValue=0
+```
+(No separate alarm needed here — it fires alongside #1 every time. If you want the SNS *message itself* to include which accounts/regions failed instead of just "Errors ≥ 1," see the note below.)
+
+---
+
+## Optional — granular trend metrics, not standalone alarms
+
+Set these up as filters only (no alarms) — they're for root-causing *after* alarm #1 already paged you, or for a dashboard:
+
+```bash
+# Per-item write failures
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/<YOUR_FUNCTION_NAME> \
+  --filter-name CertDiscoveryPutItemFailures \
+  --filter-pattern '{ $.event = "PutItemFailed" }' \
+  --metric-transformations \
+      metricName=CertDiscoveryPutItemFailures,metricNamespace=CertDiscovery,metricValue=1,defaultValue=0
+
+# Per-region failures (which region fails most)
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/<YOUR_FUNCTION_NAME> \
+  --filter-name CertDiscoveryRegionFailures \
+  --filter-pattern '{ $.event = "RegionFailed" }' \
+  --metric-transformations \
+      metricName=CertDiscoveryRegionFailures,metricNamespace=CertDiscovery,metricValue=1,defaultValue=0
+
+# Per-account failures (IAM/trust-policy drift detection)
+aws logs put-metric-filter \
+  --log-group-name /aws/lambda/<YOUR_FUNCTION_NAME> \
+  --filter-name CertDiscoveryAccountFailures \
+  --filter-pattern '{ $.event = "AccountFailed" }' \
+  --metric-transformations \
+      metricName=CertDiscoveryAccountFailures,metricNamespace=CertDiscovery,metricValue=1,defaultValue=0
+```
+
+---
+
+## Situational: DLQ (only if EventBridge schedule + retries + DLQ configured)
+
+```bash
+aws cloudwatch put-metric-alarm \
+  --alarm-name cert-discovery-dlq-not-empty \
+  --namespace AWS/SQS --metric-name ApproximateNumberOfMessagesVisible \
+  --dimensions Name=QueueName,Value=<YOUR_DLQ_NAME> \
+  --statistic Sum --period 300 --evaluation-periods 1 \
+  --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold \
+  --treat-missing-data notBreaching \
+  --alarm-actions arn:aws:sns:us-east-1:<ACCOUNT_ID>:cert-discovery-critical
+```
+Distinguishes "failed once, retry succeeded" (fine) from "failed every retry attempt" (needs attention) — `Errors` alone can't tell those apart.
+
+---
+
+## One thing worth doing once all of this is up
+
+Build a small **CloudWatch Dashboard** pulling together `Errors`, `Duration`, `CertDiscoveryDescribeFailureEvents`, `CertDiscoveryDuplicatesDropped`, and `CertDiscoveryCertificatesFound` on one screen — that gives you the "is everything healthy" view in one glance, separate from the alarms themselves. Want me to give you the `put-dashboard` JSON for that too?

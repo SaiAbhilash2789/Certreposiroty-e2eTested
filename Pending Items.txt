@@ -1,0 +1,155 @@
+
+
+## Prompt 1 – Dashboard & Metrics should respect Certificate filters
+
+```
+The Dashboard and Metrics tabs must always reflect the currently filtered dataset from the Certificate Repository page.
+
+Requirements:
+- All filters applied in the Certificate Repository (search keywords, provider, owner, manager, certificate type, expiry, Slack/PagerDuty filters, etc.) must be treated as the source of truth.
+- When the user navigates to the Dashboard or Metrics tabs, all calculations, charts, counts, KPIs, and summaries must be generated only from the filtered certificate dataset.
+- The active filters should remain intact while switching between tabs.
+- If all filters are cleared, Dashboard and Metrics should automatically return to showing the complete dataset.
+- Ensure there is no mismatch between the certificate table, Dashboard, and Metrics.
+- Verify every metric against the filtered certificate list.
+```
+
+---
+
+## Prompt 2 – Support multiple search keywords
+
+```
+Enhance the Certificate Repository search functionality to support multiple search keywords.
+
+Requirements:
+- Allow users to enter multiple keywords.
+- Support comma-separated values and/or token/chip-based input.
+- Each keyword should behave as an independent search term.
+- Searching should be case-insensitive.
+- Ignore duplicate keywords.
+- Trim leading/trailing spaces automatically.
+- Allow users to remove individual keywords without affecting the remaining keywords.
+- Searching should continue to work together with all other filters.
+```
+
+---
+
+## Prompt 3 – Removing a search keyword should not clear filters
+
+```
+Fix the search/filter interaction.
+
+Current Issue:
+When a user removes the search keyword, the entire filter state is cleared.
+
+Expected Behaviour:
+- Removing a search keyword should only remove that keyword.
+- All other filters must remain unchanged.
+- Dashboard, Metrics, and Certificate Repository should refresh using the remaining filters.
+- Reset filters only when the user explicitly clicks "Clear Filters."
+```
+
+---
+
+## Prompt 4 – Create a dedicated Lambda for timestamp
+
+```
+Create a separate AWS Lambda function responsible for returning the application's last refresh timestamp.
+
+Requirements:
+- Do not couple this endpoint with the certificate data endpoint.
+- The Lambda should return only:
+    - Last refresh timestamp
+    - Status
+- Return the timestamp in ISO-8601 format.
+- Expose it through a dedicated API Gateway endpoint.
+- The frontend should fetch this timestamp independently without impacting certificate loading performance.
+- Include proper error handling and logging.
+```
+
+---
+
+## Prompt 5 – Move timestamp to the status bar
+
+```
+Move the Last Updated timestamp from its current location to the application's status bar.
+
+Requirements:
+- Remove the timestamp from its current position.
+- Display it in the status bar.
+- Ensure it updates automatically whenever the backend timestamp changes.
+- Maintain responsive behaviour across desktop and mobile layouts.
+- The status bar should remain visually clean and consistent with the application's design.
+```
+
+---
+
+## Prompt 6 – Care Portal navigation
+
+```
+Update the Care Portal navigation.
+
+Requirements:
+- Whenever a user clicks "Care Portal", redirect them to the Care Wiki.
+- Open the Care Wiki in a new browser tab.
+- Handle invalid or unavailable URLs gracefully.
+- Add appropriate accessibility attributes.
+```
+
+---
+
+## Prompt 7 – Add Onboard AWS Account icon
+
+```
+Add a new "Onboard AWS Account" action icon.
+
+Requirements:
+- Place the icon where the timestamp is currently displayed.
+- Use a professional icon that clearly represents adding or onboarding a new AWS account.
+- The icon should match the application's existing design language.
+- Add a tooltip:
+    "Onboard New AWS Account"
+- Ensure proper hover and keyboard accessibility.
+```
+
+---
+
+## Prompt 8 – Redirect onboarding icon to Wolken request
+
+```
+Implement the onboarding action for the new AWS Account icon.
+
+Requirements:
+- When the user clicks the "Onboard AWS Account" icon, redirect them to the Wolken request form.
+- Open the request in a new browser tab.
+- The request should allow users to submit all required AWS account onboarding details.
+- Validate the configured URL before redirecting.
+- Handle unavailable URLs gracefully by displaying an appropriate error message.
+```
+
+---
+
+## Final QA Prompt
+
+```
+After implementing all the above changes, perform a complete regression test.
+
+Validate the following:
+
+1. Certificate filters remain synchronized with Dashboard and Metrics.
+2. Multiple search keywords work correctly.
+3. Individual keyword removal does not reset filters.
+4. Clear Filters resets all filters correctly.
+5. Timestamp is fetched from the new Lambda.
+6. Timestamp displays correctly in the status bar.
+7. Care Portal redirects to the Care Wiki.
+8. Onboard AWS Account icon is displayed correctly.
+9. Clicking the onboarding icon redirects to the Wolken request page.
+10. Verify responsive behaviour across desktop and mobile.
+11. Verify keyboard accessibility and tooltips.
+12. Ensure there are no console errors or React warnings.
+13. Ensure there are no performance regressions or unnecessary API calls.
+14. Confirm existing functionality remains unaffected after all changes.
+```
+
+These prompts are written in a way that clearly describes the expected behavior and acceptance criteria, making them suitable for implementation by a developer or an AI coding assistant.

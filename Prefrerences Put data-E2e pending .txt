@@ -1,0 +1,25 @@
+TC-13 / TC-21 — the missing ConditionExpression bug (upsert instead of update-only). This has nothing to do with which fields you're toggling; it's about the Key match, not the field being written. Still Critical, still worth fixing before production.
+TC-19 / TC-22 — BOLA/auth concerns. Still applies exactly the same — a toggle-only UI doesn't prevent someone from calling the API directly with someone else's accountId.
+TC-01–TC-12, TC-14 — all still directly relevant.
+
+Can deprioritize / simplify:
+
+TC-16 (extremely long accountId) — still worth a basic sanity check, but lower priority since this isn't a free-text field being abused, it's driven by a fixed toggle UI where accountId presumably comes from session/context rather than user typing.
+TC-18 (unicode in domainCert) — same, lower priority unless domainCert values can genuinely contain unusual characters in your system.
+
+
+
+TC-01	Happy path update	PUT with valid accountId, existing domainCert, field: "slack Alerting", value: true	200, body contains updated: {slackAlerting: true}	Baseline smoke test
+TC-12	Non-boolean value (null)	value: null	400 "value must be a boolean"	—
+TC-14	Extra/unknown fields in body	add "foo": "bar" alongside valid fields	200, extra field ignored	Confirms no accidental mass-assignment
+
+
+
+Alsmo make sure that, we update the existing dynamo DB table instead of the new table - Discuss internally with Senthil
+
+In the worst case -  If there is any duplicate data of any bad data due to some issue, then teh PagerDuty/Slack notification would go to some different team for different certificate
+
+Having a separate table, Always helps to understand we are pointing to the correct data
+
+Also, check for feasibility, If it can check the data in Aggregate table for the respective account name and Account id and update the preferences table only if it found that respective data in aggregate table.
+Just incase, creating anew entry of data every time with out validating the aggregate table is not a good idea.

@@ -1,0 +1,94 @@
+Implement the following RBAC changes in the Express backend, specifically in the `app.js` entry-point middleware flow.
+
+### Authentication & Authorization Requirements
+
+1. **Validate AWS Cognito JWT access tokens**
+
+   * Require a valid Cognito JWT for all protected API requests.
+   * Validate the token signature, issuer, expiration, and other appropriate Cognito claims.
+   * Do not treat the presence of an `Authorization` header as sufficient authentication.
+   * Reject missing, malformed, expired, or invalid tokens with `401 Unauthorized`.
+
+2. **Extract Cognito user/group information**
+
+   * After successful JWT validation, extract the user's Cognito group information from the token.
+   * Use the actual Cognito group claim configured by the application (for example, `cognito:groups`).
+   * Do not assume a user is an administrator merely because the JWT is valid.
+
+3. **GET requests — authenticated read-only access**
+
+   * Allow any authenticated user with a valid Cognito JWT to execute `GET` requests.
+   * A user does NOT need to belong to the admin group to perform GET operations.
+   * Example:
+
+     * Valid user + `GET` → `200/normal processing`
+     * Invalid/missing token + `GET` → `401 Unauthorized`
+
+4. **PUT requests — admin-only access**
+
+   * Allow `PUT` requests only when the authenticated Cognito user is explicitly assigned to the configured admin group/role.
+   * Example:
+
+     * Valid JWT + admin group + `PUT` → `200/normal processing`
+     * Valid JWT + non-admin group + `PUT` → `403 Forbidden`
+     * Missing/invalid JWT + `PUT` → `401 Unauthorized`
+
+5. **Do not weaken existing security**
+
+   * Preserve the existing API-key/authorizer/security mechanisms, until everything is validated.
+   * Do not bypass authentication for any route.
+   * Do not fall back to allowing a PUT when the group claim is missing.
+   * If the Cognito group information is missing or cannot be verified, treat the user as non-admin and deny the PUT request.
+
+6. **Middleware behavior**
+   Implement the middleware so the flow is effectively:
+
+   Request
+   ↓
+   Validate Cognito JWT
+   ↓
+   Extract user identity + Cognito groups
+   ↓
+   Is request GET?
+   ├── Yes → Allow authenticated user
+   │
+   └── No → Is request PUT?
+   ├── Yes → Is user in admin group?
+   │          ├── Yes → Allow
+   │          └── No  → 403 Forbidden
+   │
+   └── Other methods → Preserve the application's existing behavior
+
+7. **Error handling**
+
+   * `401 Unauthorized` → authentication/token failure.
+   * `403 Forbidden` → valid authenticated user but insufficient permissions.
+   * Do not expose JWT contents, secrets, or sensitive authentication details in API responses or logs.
+
+8. **Logging**
+
+   * Log authorization failures with safe/sanitized information useful for troubleshooting.
+   * Never log the raw JWT/access token.
+   * Never log secrets or sensitive token contents.
+
+9. **Regression protection**
+
+   * Verify that existing GET functionality continues to work for authenticated non-admin users.
+   * Verify that PUT functionality continues to work for authenticated admin users.
+   * Verify that authenticated non-admin users cannot perform PUT operations.
+   * Verify that unauthenticated users cannot access protected GET or PUT endpoints.
+   * Verify that expired/invalid JWTs are rejected.
+   * Verify that a token without the Cognito group claim cannot be used to perform a PUT.
+   * Verify that a user belonging to another Cognito group cannot perform a PUT.
+
+Before modifying the code, inspect the existing `app.js`, Cognito configuration, existing authentication/authorizer logic, and route definitions so this RBAC implementation integrates with the current architecture rather than creating a second conflicting authentication mechanism.
+
+After implementation, provide:
+
+1. The exact files changed.
+2. A concise explanation of the RBAC flow.
+3. The exact Cognito group/claim being used for the admin check.
+4. The test cases executed and their results.
+5. Any existing authentication/API-key behavior that was intentionally preserved.
+
+This version is safer because it explicitly defines **401 vs 403**, prevents a missing group from accidentally becoming admin access, and tells them **not to create a second conflicting authentication mechanism**.
